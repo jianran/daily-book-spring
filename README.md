@@ -184,7 +184,7 @@ Once the GitHub Actions workflow finishes building the Docker image:
 
 # Option 2: Manual steps
 docker login ghcr.io -u <your-username> -p <your-token>
-docker pull ghcr.io/fatan/daily-book-spring:latest
+docker pull ghcr.io/jianran/daily-book-spring:latest
 ./run-local.sh
 ```
 

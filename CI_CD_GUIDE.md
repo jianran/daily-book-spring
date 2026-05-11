@@ -5,7 +5,7 @@ This guide explains how to use the CI/CD pipeline to build the Docker image and 
 ## Overview
 
 ```
-GitHub Push → GitHub Actions (Build) → ghcr.io/fatan/daily-book-spring
+GitHub Push → GitHub Actions (Build) → ghcr.io/jianran/daily-book-spring
                                                    ↓
                                             Local Docker Run
                                                    ↓
@@ -65,14 +65,14 @@ docker login ghcr.io -u <your-github-username> -p <your-github-token>
 docker login ghcr.io -u <your-github-username> -p <your-github-token>
 
 # Pull the latest image
-docker pull ghcr.io/fatan/daily-book-spring:latest
+docker pull ghcr.io/jianran/daily-book-spring:latest
 
 # Start with environment variables
 docker run -d \
     --name daily-book-spring \
     -p 8080:8080 \
     --env-file .env \
-    ghcr.io/fatan/daily-book-spring:latest
+    ghcr.io/jianran/daily-book-spring:latest
 
 # Wait for startup
 sleep 5
@@ -122,7 +122,7 @@ Only pushes to `main` will build and push the Docker image.
 docker login ghcr.io -u <your-github-username> -p <your-github-token>
 
 # Check available tags
-docker pull ghcr.io/fatan/daily-book-spring:latest
+docker pull ghcr.io/jianran/daily-book-spring:latest
 ```
 
 ### Container Won't Start

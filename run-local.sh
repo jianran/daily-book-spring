@@ -13,7 +13,7 @@ NC='\033[0m' # No Color
 
 # Configuration
 REGISTRY="ghcr.io"
-IMAGE_NAME="fatan/daily-book-spring"
+IMAGE_NAME="jianran/daily-book-spring"
 CONTAINER_NAME="daily-book-spring"
 ENV_FILE=".env"
 

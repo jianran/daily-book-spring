@@ -7,7 +7,7 @@
     "build": "mvn clean package -DskipTests",
     "test": "mvn test",
     "docker:login": "docker login ghcr.io",
-    "docker:pull": "docker pull ghcr.io/fatan/daily-book-spring:latest",
+    "docker:pull": "docker pull ghcr.io/jianran/daily-book-spring:latest",
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",
     "docker:logs": "docker logs -f daily-book-spring",

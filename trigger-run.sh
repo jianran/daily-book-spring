@@ -19,7 +19,7 @@ echo ""
 # Pull the latest image from GitHub Container Registry
 echo -e "${YELLOW}Pulling latest image from GitHub Container Registry...${NC}"
 REGISTRY="ghcr.io"
-IMAGE_NAME="fatan/daily-book-spring"
+IMAGE_NAME="jianran/daily-book-spring"
 CONTAINER_NAME="daily-book-spring"
 
 # Get user input for image tag (optional)
