@@ -34,8 +34,8 @@ public class DiscordService {
         }
 
         try {
-            String embedJson = buildEmbedJson(essay);
-            String payload = String.format("{\"content\": null, \"embeds\": [%s]}", embedJson);
+            String embedsJson = buildEmbedsJson(essay);
+            String payload = String.format("{\"content\": null, \"embeds\": [%s]}", embedsJson);
 
             webClient.post()
                     .uri(webhookUrl)
@@ -69,9 +69,9 @@ public class DiscordService {
                 return;
             }
 
-            // Send message to DM channel
-            String embedJson = buildEmbedJson(essay);
-            String payload = String.format("{\"content\": null, \"embeds\": [%s]}", embedJson);
+            // Send essay in multiple embeds (Discord limits: 4096 chars per embed description)
+            String embedsJson = buildEmbedsJson(essay);
+            String payload = String.format("{\"content\": null, \"embeds\": [%s]}", embedsJson);
 
             webClient.post()
                     .uri("https://discord.com/api/v10/channels/" + dmChannelId + "/messages")
@@ -161,38 +161,72 @@ public class DiscordService {
   /**
      * Builds Discord embed JSON for the essay
      */
-    private String buildEmbedJson(Essay essay) {
+    private String buildEmbedsJson(Essay essay) {
         String bookTitle = escapeJson(essay.getSelectedBook().getTitle());
         String author = escapeJson(essay.getSelectedBook().getAuthor());
         String category = escapeJson(essay.getSelectedBook().getCategory());
         String musicLink = escapeJson(essay.getAppleMusicLink().getFormattedText());
         String formattedDate = essay.getGeneratedAt().toString().replace('T', ' ');
         String timestamp = essay.getGeneratedAt().toString();
+        String essayContent = escapeJson(essay.getContent());
 
-        StringBuilder json = new StringBuilder();
-        json.append("{\n");
-        json.append("  \"title\": \"").append(bookTitle).append("\",\n");
-        json.append("  \"description\": \"A 10-minute reading essay about *").append(bookTitle).append("* by ").append(author).append("\",\n");
-        json.append("  \"color\": 3447003,\n");
-        json.append("  \"fields\": [\n");
-        json.append("    {\n");
-        json.append("      \"name\": \"📚 Book\",\n");
-        json.append("      \"value\": \"**").append(bookTitle).append("**\\nby ").append(author).append("\\n*Category: ").append(category).append("*\",\n");
-        json.append("      \"inline\": false\n");
-        json.append("    },\n");
-        json.append("    {\n");
-        json.append("      \"name\": \"🎵 Background Music\",\n");
-        json.append("      \"value\": \"").append(musicLink).append("\",\n");
-        json.append("      \"inline\": false\n");
-        json.append("    }\n");
-        json.append("  ],\n");
-        json.append("  \"footer\": {\n");
-        json.append("    \"text\": \"Daily Book • Generated at ").append(formattedDate).append("\"\n");
-        json.append("  },\n");
-        json.append("  \"timestamp\": \"").append(timestamp).append("\"\n");
-        json.append("}");
+        // Split essay for Discord embeds (description max 4096, field value max 1024)
+        // Use description for essay content, fields only for metadata
+        int maxDesc = 4000;
+        int totalLen = essayContent.length();
+        String part1 = essayContent.substring(0, Math.min(maxDesc, totalLen));
+        String part2 = totalLen > maxDesc ? essayContent.substring(maxDesc, Math.min(maxDesc * 2, totalLen)) : "";
 
-        return json.toString();
+        StringBuilder embeds = new StringBuilder();
+
+        // Embed 1: essay part 1 + book info
+        embeds.append("{\n");
+        embeds.append("  \"title\": \"").append(bookTitle).append("\",\n");
+        embeds.append("  \"description\": \"").append(part1).append("\",\n");
+        embeds.append("  \"color\": 3447003,\n");
+        embeds.append("  \"fields\": [\n");
+        embeds.append("    {\n");
+        embeds.append("      \"name\": \"📚 Author\",\n");
+        embeds.append("      \"value\": \"").append(author).append("\",\n");
+        embeds.append("      \"inline\": true\n");
+        embeds.append("    },\n");
+        embeds.append("    {\n");
+        embeds.append("      \"name\": \"📂 Category\",\n");
+        embeds.append("      \"value\": \"").append(category).append("\",\n");
+        embeds.append("      \"inline\": true\n");
+        embeds.append("    },\n");
+        embeds.append("    {\n");
+        embeds.append("      \"name\": \"🎵 Background Music\",\n");
+        embeds.append("      \"value\": \"").append(musicLink).append("\",\n");
+        embeds.append("      \"inline\": false\n");
+        embeds.append("    }\n");
+        embeds.append("  ],\n");
+        embeds.append("  \"footer\": {\n");
+        embeds.append("    \"text\": \"Daily Book • ").append(formattedDate).append(" • Part 1").append(part2.isEmpty() ? "" : "/2").append("\"\n");
+        embeds.append("  },\n");
+        embeds.append("  \"timestamp\": \"").append(timestamp).append("\"\n");
+        embeds.append("}");
+
+        if (!part2.isEmpty()) {
+            embeds.append(",\n");
+            embeds.append("{\n");
+            embeds.append("  \"description\": \"").append(part2).append("\",\n");
+            embeds.append("  \"color\": 3447003,\n");
+            embeds.append("  \"fields\": [\n");
+            embeds.append("    {\n");
+            embeds.append("      \"name\": \"🎵 Background Music\",\n");
+            embeds.append("      \"value\": \"").append(musicLink).append("\",\n");
+            embeds.append("      \"inline\": false\n");
+            embeds.append("    }\n");
+            embeds.append("  ],\n");
+            embeds.append("  \"footer\": {\n");
+            embeds.append("    \"text\": \"Daily Book • ").append(formattedDate).append(" • Part 2/2\"\n");
+            embeds.append("  },\n");
+            embeds.append("  \"timestamp\": \"").append(timestamp).append("\"\n");
+            embeds.append("}");
+        }
+
+        return embeds.toString();
     }
 
     /**
