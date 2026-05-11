@@ -18,19 +18,17 @@ public class DeepSeekAiService {
 
     private final WebClient webClient;
     private final String apiKey;
+    private final String model;
+    private final double temperature;
 
-    @Value("${spring.ai.deepseek.api.key:}")
-    private String deepSeekApiKey;
-
-    @Value("${spring.ai.deepseek.chat.options.model:deepseek-chat}")
-    private String model;
-
-    @Value("${spring.ai.deepseek.chat.options.temperature:0.7}")
-    private double temperature;
-
-    public DeepSeekAiService() {
+    public DeepSeekAiService(
+            @Value("${spring.ai.deepseek.api.key:}") String apiKey,
+            @Value("${spring.ai.deepseek.chat.options.model:deepseek-chat}") String model,
+            @Value("${spring.ai.deepseek.chat.options.temperature:0.7}") double temperature) {
         this.webClient = WebClient.create();
-        this.apiKey = deepSeekApiKey;
+        this.apiKey = apiKey;
+        this.model = model;
+        this.temperature = temperature;
     }
 
    /**
