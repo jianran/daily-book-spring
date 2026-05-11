@@ -1,13 +1,11 @@
 package com.dailybook.service;
 
 import com.dailybook.model.Essay;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.web.reactive.function.client.WebClientResponseException;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -19,12 +17,12 @@ import java.util.Map;
 public class DiscordService {
 
     private final WebClient webClient;
-    private final ObjectMapper objectMapper;
     private final String webhookUrl;
     private final String userId;
     private final String authToken;
 
-    private static final int MAX_DESC_LENGTH = 2800; // Leave room for title, fields, footer (6000 total embed limit)
+    private static final int PREVIEW_LENGTH = 500;
+    private static final int MSG_CHUNK_SIZE = 1900;
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     public DiscordService(
@@ -32,7 +30,6 @@ public class DiscordService {
             @Value("${discord.user.id:}") String userId,
             @Value("${discord.auth.token:}") String authToken) {
         this.webClient = WebClient.create();
-        this.objectMapper = new ObjectMapper();
         this.webhookUrl = webhookUrl;
         this.userId = userId;
         this.authToken = authToken;
@@ -67,27 +64,18 @@ public class DiscordService {
 
     private void doSend(String url, String authToken, Essay essay) {
         try {
-            Map<String, Object> payload = buildPayload(essay);
+            // Step 1: Send book info embed with essay preview
+            sendMessage(url, authToken, buildEmbedPayload(essay));
 
-            // Debug: log payload size
-            try {
-                String json = objectMapper.writeValueAsString(payload);
-                System.out.println("Discord payload: " + json.length() + " bytes");
-                if (json.length() < 2000) System.out.println("Payload: " + json);
-            } catch (Exception ignored) {}
-
-            var request = webClient.post()
-                    .uri(url)
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .bodyValue(payload);
-
-            if (authToken != null) {
-                request.header("Authorization", "Bot " + authToken);
+            // Step 2: Send full essay as plain text messages (2000 char Discord limit)
+            List<String> chunks = splitContent(essay.getContent(), MSG_CHUNK_SIZE);
+            for (int i = 0; i < chunks.size(); i++) {
+                String label = chunks.size() > 1 ? "**" + essay.getSelectedBook().getTitle()
+                        + "** (part " + (i + 1) + "/" + chunks.size() + ")\n\n" : "";
+                Map<String, Object> textPayload = new LinkedHashMap<>();
+                textPayload.put("content", label + chunks.get(i));
+                sendMessage(url, authToken, textPayload);
             }
-
-            String response = request.retrieve()
-                    .bodyToMono(String.class)
-                    .block();
 
             System.out.println("Essay sent to Discord successfully");
         } catch (WebClientResponseException e) {
@@ -97,50 +85,51 @@ public class DiscordService {
         }
     }
 
-    private Map<String, Object> buildPayload(Essay essay) {
+    private void sendMessage(String url, String authToken, Map<String, Object> payload) {
+        var request = webClient.post()
+                .uri(url)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(payload);
+
+        if (authToken != null) {
+            request.header("Authorization", "Bot " + authToken);
+        }
+
+        request.retrieve().toBodilessEntity().block();
+    }
+
+    private Map<String, Object> buildEmbedPayload(Essay essay) {
         String bookTitle = essay.getSelectedBook().getTitle();
         String author = essay.getSelectedBook().getAuthor();
         String category = essay.getSelectedBook().getCategory();
-        String essayContent = essay.getContent();
         String musicLink = essay.getAppleMusicLink().getFormattedText();
         String date = essay.getGeneratedAt().format(DATE_FMT);
         String timestamp = essay.getGeneratedAt().toString();
 
-        // Split essay into chunks that fit Discord embed total size limit (6000 chars per embed)
-        List<String> chunks = splitContent(essayContent, MAX_DESC_LENGTH);
-        System.out.println("Essay " + essayContent.length() + " chars split into " + chunks.size() + " embed(s)");
-        for (int i = 0; i < chunks.size(); i++) {
-            System.out.println("  Chunk " + (i+1) + ": " + chunks.get(i).length() + " chars");
+        // Preview: first ~500 chars of the essay
+        String preview = essay.getContent();
+        if (preview.length() > PREVIEW_LENGTH) {
+            preview = preview.substring(0, PREVIEW_LENGTH) + "...";
         }
 
-        List<Map<String, Object>> embeds = new ArrayList<>();
+        List<Map<String, Object>> fields = new ArrayList<>();
+        fields.add(field("📚 Author", author, true));
+        fields.add(field("📂 Category", category, true));
+        fields.add(field("📖 Preview", preview, false));
+        fields.add(field("🎵 Background Music", musicLink, false));
 
-        for (int i = 0; i < chunks.size(); i++) {
-            Map<String, Object> embed = new LinkedHashMap<>();
-            embed.put("color", 3447003);
-            embed.put("description", chunks.get(i));
-            embed.put("timestamp", timestamp);
+        Map<String, Object> embed = new LinkedHashMap<>();
+        embed.put("title", bookTitle);
+        embed.put("color", 3447003);
+        embed.put("fields", fields);
+        embed.put("timestamp", timestamp);
 
-            if (i == 0) {
-                embed.put("title", bookTitle);
-                List<Map<String, Object>> fields = new ArrayList<>();
-                fields.add(field("📚 Author", author, true));
-                fields.add(field("📂 Category", category, true));
-                fields.add(field("🎵 Background Music", musicLink, false));
-                embed.put("fields", fields);
-            }
-
-            String partLabel = chunks.size() > 1 ? " • Part " + (i + 1) + "/" + chunks.size() : "";
-            Map<String, String> footer = new LinkedHashMap<>();
-            footer.put("text", "Daily Book • " + date + partLabel);
-            embed.put("footer", footer);
-
-            embeds.add(embed);
-        }
+        Map<String, String> footer = new LinkedHashMap<>();
+        footer.put("text", "Daily Book • " + date + " • Full essay follows below");
+        embed.put("footer", footer);
 
         Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("embeds", embeds);
-
+        payload.put("embeds", List.of(embed));
         return payload;
     }
 
@@ -159,20 +148,18 @@ public class DiscordService {
         int start = 0;
         while (start < content.length()) {
             int end = Math.min(start + maxLen, content.length());
-            // Try to break at a paragraph boundary
             if (end < content.length()) {
-                int breakPoint = content.lastIndexOf("\n\n", end);
-                if (breakPoint > start && breakPoint > end - 500) {
-                    end = breakPoint + 2;
+                int bp = content.lastIndexOf("\n\n", end);
+                if (bp > start && bp > end - 400) {
+                    end = bp + 2;
                 } else {
-                    breakPoint = content.lastIndexOf("\n", end);
-                    if (breakPoint > start && breakPoint > end - 200) {
-                        end = breakPoint + 1;
+                    bp = content.lastIndexOf("\n", end);
+                    if (bp > start && bp > end - 150) {
+                        end = bp + 1;
                     } else {
-                        // Break at last space
-                        breakPoint = content.lastIndexOf(" ", end);
-                        if (breakPoint > start && breakPoint > end - 100) {
-                            end = breakPoint + 1;
+                        bp = content.lastIndexOf(" ", end);
+                        if (bp > start && bp > end - 80) {
+                            end = bp + 1;
                         }
                     }
                 }

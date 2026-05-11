@@ -2,11 +2,15 @@ package com.dailybook.service;
 
 import com.dailybook.model.Book;
 import com.dailybook.model.Essay;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -17,6 +21,7 @@ import java.util.Map;
 public class DeepSeekAiService {
 
     private final WebClient webClient;
+    private final ObjectMapper objectMapper;
     private final String apiKey;
     private final String model;
     private final double temperature;
@@ -26,6 +31,7 @@ public class DeepSeekAiService {
             @Value("${spring.ai.deepseek.chat.options.model:deepseek-chat}") String model,
             @Value("${spring.ai.deepseek.chat.options.temperature:0.7}") double temperature) {
         this.webClient = WebClient.create();
+        this.objectMapper = new ObjectMapper();
         this.apiKey = apiKey;
         this.model = model;
         this.temperature = temperature;
@@ -37,7 +43,7 @@ public class DeepSeekAiService {
    public Essay generateEssay(Book selectedBook) {
         String essayContent = generateEssayContent(selectedBook);
 
-        Essay.AppleMusicLink musicLink = createAppleMusicLink(essayContent);
+        Essay.AppleMusicLink musicLink = createAppleMusicLink(selectedBook);
 
         return new Essay(
                 "essay_" + System.currentTimeMillis(),
@@ -89,17 +95,19 @@ public class DeepSeekAiService {
     }
 
     /**
-     * Extracts content from DeepSeek API JSON response
+     * Extracts content from DeepSeek API JSON response using Jackson for safe parsing.
      */
     private String extractContentFromResponse(String response) {
         try {
-            // Simple JSON parsing to extract choices[0].message.content
-            int contentStart = response.indexOf("\"content\"");
-            if (contentStart != -1) {
-                int quoteStart = response.indexOf('"', contentStart + 10);
-                int quoteEnd = response.indexOf('"', quoteStart + 1);
-                if (quoteEnd != -1) {
-                    return response.substring(quoteStart + 1, quoteEnd);
+            JsonNode root = objectMapper.readTree(response);
+            JsonNode choices = root.get("choices");
+            if (choices != null && choices.isArray() && choices.size() > 0) {
+                JsonNode message = choices.get(0).get("message");
+                if (message != null) {
+                    JsonNode content = message.get("content");
+                    if (content != null) {
+                        return content.asText();
+                    }
                 }
             }
             return null;
@@ -310,28 +318,117 @@ public class DeepSeekAiService {
     }
 
     /**
-     * Creates Apple Music deep link for iOS - linking to reading/study playlists
+     * Asks DeepSeek AI to recommend top 3 music pieces for reading this book,
+     * then generates Apple Music search URLs for those pieces.
      */
-    private Essay.AppleMusicLink createAppleMusicLink(String essayContent) {
-        // Apple Music playlist links for reading/study/focus
-        // These playlists are designed for background music while reading
+    private Essay.AppleMusicLink createAppleMusicLink(Book book) {
+        List<String> recommendations = generateMusicRecommendations(book);
 
-        // Reading/focus playlists on Apple Music
-        String[] readingPlaylists = {
-            "https://music.apple.com/us/playlist/study/playlists/pl.f4d1867be1fd48259e8c2f7e17e42b3c",
-            "https://music.apple.com/us/playlist/chill/playlists/pl.5ee833b27438312b8c7da7894c1d950a",
-            "https://music.apple.com/us/playlist/focus/playlists/pl.u-6mo4lDBJ2e9D3p",
-            "https://music.apple.com/us/playlist/ambient/playlists/pl.2b0e47c5a0e54b0ea0d4b9f6e3c8d1a2",
-            "https://music.apple.com/us/playlist/piano/playlists/pl.u-8nWOlD4J6e8F2a"
-        };
+        StringBuilder formattedText = new StringBuilder();
+        StringBuilder allUrls = new StringBuilder();
+        String firstUrl = null;
+        String firstDeepLink = null;
 
-        // Pick the first playlist (Study playlist)
-        String selectedPlaylist = readingPlaylists[0];
+        for (int i = 0; i < recommendations.size(); i++) {
+            String name = recommendations.get(i);
+            String encoded = URLEncoder.encode(name, StandardCharsets.UTF_8);
+            String url = "https://music.apple.com/search?term=" + encoded;
+            String deepLink = "music://music.apple.com/search?term=" + encoded;
 
-        // Apple Music iOS deep link (opens the app directly to the playlist)
-        String deepLink = selectedPlaylist.replace("https://", "music://");
+            if (i == 0) {
+                firstUrl = url;
+                firstDeepLink = deepLink;
+            }
 
-        return new Essay.AppleMusicLink(selectedPlaylist, deepLink, "Listen to study music while reading: " + selectedPlaylist);
+            formattedText.append("🎵 ").append(i + 1).append(". ").append(name).append("\n");
+            if (allUrls.length() > 0) allUrls.append("\n");
+            allUrls.append(url);
+        }
+
+        formattedText.append("\nOpen in Apple Music to listen while reading.");
+
+        return new Essay.AppleMusicLink(
+                firstUrl != null ? firstUrl : "https://music.apple.com/search?term=classical+reading",
+                firstDeepLink != null ? firstDeepLink : "music://music.apple.com/search?term=classical+reading",
+                formattedText.toString()
+        );
+    }
+
+    /**
+     * Calls DeepSeek AI to get top 3 music recommendations for reading this book.
+     */
+    private List<String> generateMusicRecommendations(Book book) {
+        String prompt = String.format("""
+                You are a music expert. Recommend exactly 3 music pieces that would be \
+                perfect background music while reading an essay about the book "%s" by %s \
+                (category: %s).
+
+                Choose music that matches the book's mood, era, themes, and atmosphere. \
+                Prefer classical, ambient, jazz, or instrumental pieces suitable for \
+                focused reading. Consider the book's historical period, cultural context, \
+                and emotional tone.
+
+                Output ONLY 3 lines in this exact format (nothing else):
+                1. Piece Name - Composer/Artist
+                2. Piece Name - Composer/Artist
+                3. Piece Name - Composer/Artist
+                """,
+                book.getTitle(), book.getAuthor(), book.getCategory());
+
+        try {
+            String response = webClient.post()
+                    .uri("https://api.deepseek.com/v1/chat/completions")
+                    .header("Authorization", "Bearer " + apiKey)
+                    .header("Content-Type", "application/json")
+                    .bodyValue(Map.of(
+                            "model", model,
+                            "messages", List.of(
+                                    Map.of("role", "user", "content", prompt)
+                            ),
+                            "temperature", 0.7,
+                            "max_tokens", 200
+                    ))
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block();
+
+            if (response != null) {
+                String content = extractContentFromResponse(response);
+                if (content != null) {
+                    return parseMusicRecommendations(content);
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("Error generating music recommendations: " + e.getMessage());
+        }
+
+        return List.of(
+                "Clair de Lune - Claude Debussy",
+                "Gymnopedie No.1 - Erik Satie",
+                "The Four Seasons - Antonio Vivaldi"
+        );
+    }
+
+    /**
+     * Parses the AI response to extract 3 music recommendation lines.
+     */
+    private List<String> parseMusicRecommendations(String content) {
+        List<String> result = new ArrayList<>();
+        for (String line : content.split("\n")) {
+            String trimmed = line.trim();
+            // Match lines starting with "1.", "2.", "3." or "1)", "2)", "3)"
+            if (trimmed.matches("^[1-3][.)]\\s+.+")) {
+                String name = trimmed.replaceFirst("^[1-3][.)]\\s+", "").trim();
+                if (!name.isEmpty()) {
+                    result.add(name);
+                }
+            }
+        }
+        return result.size() >= 3 ? result.subList(0, 3)
+                : result.size() > 0 ? result
+                : List.of("Clair de Lune - Claude Debussy",
+                        "Gymnopedie No.1 - Erik Satie",
+                        "The Four Seasons - Antonio Vivaldi");
     }
 
     /**
