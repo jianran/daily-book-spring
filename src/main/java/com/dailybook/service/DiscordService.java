@@ -1,59 +1,50 @@
 package com.dailybook.service;
 
 import com.dailybook.model.Essay;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
 @Service
 public class DiscordService {
 
     private final WebClient webClient;
+    private final ObjectMapper objectMapper;
     private final String webhookUrl;
     private final String userId;
     private final String authToken;
+
+    private static final int MAX_DESC_LENGTH = 4000;
+    private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     public DiscordService(
             @Value("${discord.webhook.url:}") String webhookUrl,
             @Value("${discord.user.id:}") String userId,
             @Value("${discord.auth.token:}") String authToken) {
         this.webClient = WebClient.create();
+        this.objectMapper = new ObjectMapper();
         this.webhookUrl = webhookUrl;
         this.userId = userId;
         this.authToken = authToken;
     }
 
-    /**
-     * Sends essay and music link to Discord via webhook
-     */
     public void sendEssayToDiscord(Essay essay) {
         if (webhookUrl == null || webhookUrl.isEmpty() || webhookUrl.contains("your")) {
             System.err.println("Discord webhook URL not configured");
             return;
         }
-
-        try {
-            String embedsJson = buildEmbedsJson(essay);
-            String payload = String.format("{\"content\": null, \"embeds\": [%s]}", embedsJson);
-
-            webClient.post()
-                    .uri(webhookUrl)
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .bodyValue(payload)
-                    .retrieve()
-                    .toBodilessEntity()
-                    .block();
-
-            System.out.println("Essay sent to Discord successfully");
-        } catch (Exception e) {
-            System.err.println("Error sending to Discord: " + e.getMessage());
-        }
+        doSend(webhookUrl, null, essay);
     }
 
-    /**
-     * Sends essay directly to user's DM channel
-     */
     public void sendEssayToDirectMessage(Essay essay) {
         if (userId == null || userId.isEmpty() || authToken == null || authToken.isEmpty() ||
             authToken.contains("your") || authToken.contains("placeholder")) {
@@ -62,35 +53,122 @@ public class DiscordService {
         }
 
         try {
-            // First, get the user's DM channel ID
             String dmChannelId = getOrCreateDMChannel();
             if (dmChannelId == null) {
                 System.err.println("Failed to get DM channel");
                 return;
             }
-
-            // Send essay in multiple embeds (Discord limits: 4096 chars per embed description)
-            String embedsJson = buildEmbedsJson(essay);
-            String payload = String.format("{\"content\": null, \"embeds\": [%s]}", embedsJson);
-
-            webClient.post()
-                    .uri("https://discord.com/api/v10/channels/" + dmChannelId + "/messages")
-                    .header("Authorization", "Bot " + authToken)
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .bodyValue(payload)
-                    .retrieve()
-                    .toBodilessEntity()
-                    .block();
-
-            System.out.println("Essay sent to Discord DM successfully");
+            doSend("https://discord.com/api/v10/channels/" + dmChannelId + "/messages", authToken, essay);
         } catch (Exception e) {
             System.err.println("Error sending to Discord DM: " + e.getMessage());
         }
     }
 
-    /**
-     * Gets or creates the user's DM channel
-     */
+    private void doSend(String url, String authToken, Essay essay) {
+        try {
+            String payload = buildPayload(essay);
+
+            var request = webClient.post()
+                    .uri(url)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .bodyValue(payload);
+
+            if (authToken != null) {
+                request.header("Authorization", "Bot " + authToken);
+            }
+
+            String response = request.retrieve()
+                    .bodyToMono(String.class)
+                    .block();
+
+            System.out.println("Essay sent to Discord successfully");
+        } catch (Exception e) {
+            System.err.println("Error sending to Discord: " + e.getMessage());
+        }
+    }
+
+    private String buildPayload(Essay essay) throws JsonProcessingException {
+        String bookTitle = essay.getSelectedBook().getTitle();
+        String author = essay.getSelectedBook().getAuthor();
+        String category = essay.getSelectedBook().getCategory();
+        String essayContent = essay.getContent();
+        String musicLink = essay.getAppleMusicLink().getFormattedText();
+        String date = essay.getGeneratedAt().format(DATE_FMT);
+        String timestamp = essay.getGeneratedAt().toString();
+
+        // Split essay into chunks that fit Discord embed description (max 4096)
+        List<String> chunks = splitContent(essayContent, MAX_DESC_LENGTH);
+
+        List<Map<String, Object>> embeds = new ArrayList<>();
+
+        for (int i = 0; i < chunks.size(); i++) {
+            Map<String, Object> embed = new LinkedHashMap<>();
+            embed.put("color", 3447003);
+            embed.put("description", chunks.get(i));
+            embed.put("timestamp", timestamp);
+
+            if (i == 0) {
+                embed.put("title", bookTitle);
+                List<Map<String, Object>> fields = new ArrayList<>();
+                fields.add(field("📚 Author", author, true));
+                fields.add(field("📂 Category", category, true));
+                fields.add(field("🎵 Background Music", musicLink, false));
+                embed.put("fields", fields);
+            }
+
+            String partLabel = chunks.size() > 1 ? " • Part " + (i + 1) + "/" + chunks.size() : "";
+            Map<String, String> footer = new LinkedHashMap<>();
+            footer.put("text", "Daily Book • " + date + partLabel);
+            embed.put("footer", footer);
+
+            embeds.add(embed);
+        }
+
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("embeds", embeds);
+
+        return objectMapper.writeValueAsString(payload);
+    }
+
+    private static Map<String, Object> field(String name, String value, boolean inline) {
+        Map<String, Object> field = new LinkedHashMap<>();
+        field.put("name", name);
+        field.put("value", value);
+        field.put("inline", inline);
+        return field;
+    }
+
+    static List<String> splitContent(String content, int maxLen) {
+        List<String> chunks = new ArrayList<>();
+        if (content == null || content.isEmpty()) return chunks;
+
+        int start = 0;
+        while (start < content.length()) {
+            int end = Math.min(start + maxLen, content.length());
+            // Try to break at a paragraph boundary
+            if (end < content.length()) {
+                int breakPoint = content.lastIndexOf("\n\n", end);
+                if (breakPoint > start && breakPoint > end - 500) {
+                    end = breakPoint + 2;
+                } else {
+                    breakPoint = content.lastIndexOf("\n", end);
+                    if (breakPoint > start && breakPoint > end - 200) {
+                        end = breakPoint + 1;
+                    } else {
+                        // Break at last space
+                        breakPoint = content.lastIndexOf(" ", end);
+                        if (breakPoint > start && breakPoint > end - 100) {
+                            end = breakPoint + 1;
+                        }
+                    }
+                }
+            }
+            chunks.add(content.substring(start, end).trim());
+            start = end;
+        }
+        return chunks;
+    }
+
     private String getOrCreateDMChannel() {
         try {
             String response = webClient.get()
@@ -101,23 +179,18 @@ public class DiscordService {
                     .block();
 
             if (response != null) {
-                // Parse JSON to find DM channel
                 int dmIndex = response.indexOf("\"type\":6");
                 if (dmIndex != -1) {
-                    // Find the channel ID
                     int idStart = response.substring(0, dmIndex).lastIndexOf("\"id\":");
                     if (idStart != -1) {
                         int quoteStart = response.indexOf('"', idStart + 5);
                         int quoteEnd = response.indexOf('"', quoteStart + 1);
                         if (quoteEnd != -1) {
-                            String channelId = response.substring(quoteStart + 1, quoteEnd);
-                            return channelId;
+                            return response.substring(quoteStart + 1, quoteEnd);
                         }
                     }
                 }
             }
-
-            // If no existing DM found, create new one
             return createNewDMChannel();
         } catch (Exception e) {
             System.err.println("Error getting DM channel: " + e.getMessage());
@@ -125,13 +198,9 @@ public class DiscordService {
         }
     }
 
-    /**
-     * Creates a new DM channel with the user
-     */
     private String createNewDMChannel() {
         try {
             String payload = String.format("{\"recipient_id\": \"%s\"}", userId);
-
             String response = webClient.post()
                     .uri("https://discord.com/api/v10/users/@me/channels")
                     .header("Authorization", "Bot " + authToken)
@@ -156,89 +225,5 @@ public class DiscordService {
             System.err.println("Error creating DM channel: " + e.getMessage());
             return null;
         }
-    }
-
-  /**
-     * Builds Discord embed JSON for the essay
-     */
-    private String buildEmbedsJson(Essay essay) {
-        String bookTitle = escapeJson(essay.getSelectedBook().getTitle());
-        String author = escapeJson(essay.getSelectedBook().getAuthor());
-        String category = escapeJson(essay.getSelectedBook().getCategory());
-        String musicLink = escapeJson(essay.getAppleMusicLink().getFormattedText());
-        String formattedDate = essay.getGeneratedAt().toString().replace('T', ' ');
-        String timestamp = essay.getGeneratedAt().toString();
-        String essayContent = escapeJson(essay.getContent());
-
-        // Split essay for Discord embeds (description max 4096, field value max 1024)
-        // Use description for essay content, fields only for metadata
-        int maxDesc = 4000;
-        int totalLen = essayContent.length();
-        String part1 = essayContent.substring(0, Math.min(maxDesc, totalLen));
-        String part2 = totalLen > maxDesc ? essayContent.substring(maxDesc, Math.min(maxDesc * 2, totalLen)) : "";
-
-        StringBuilder embeds = new StringBuilder();
-
-        // Embed 1: essay part 1 + book info
-        embeds.append("{\n");
-        embeds.append("  \"title\": \"").append(bookTitle).append("\",\n");
-        embeds.append("  \"description\": \"").append(part1).append("\",\n");
-        embeds.append("  \"color\": 3447003,\n");
-        embeds.append("  \"fields\": [\n");
-        embeds.append("    {\n");
-        embeds.append("      \"name\": \"📚 Author\",\n");
-        embeds.append("      \"value\": \"").append(author).append("\",\n");
-        embeds.append("      \"inline\": true\n");
-        embeds.append("    },\n");
-        embeds.append("    {\n");
-        embeds.append("      \"name\": \"📂 Category\",\n");
-        embeds.append("      \"value\": \"").append(category).append("\",\n");
-        embeds.append("      \"inline\": true\n");
-        embeds.append("    },\n");
-        embeds.append("    {\n");
-        embeds.append("      \"name\": \"🎵 Background Music\",\n");
-        embeds.append("      \"value\": \"").append(musicLink).append("\",\n");
-        embeds.append("      \"inline\": false\n");
-        embeds.append("    }\n");
-        embeds.append("  ],\n");
-        embeds.append("  \"footer\": {\n");
-        embeds.append("    \"text\": \"Daily Book • ").append(formattedDate).append(" • Part 1").append(part2.isEmpty() ? "" : "/2").append("\"\n");
-        embeds.append("  },\n");
-        embeds.append("  \"timestamp\": \"").append(timestamp).append("\"\n");
-        embeds.append("}");
-
-        if (!part2.isEmpty()) {
-            embeds.append(",\n");
-            embeds.append("{\n");
-            embeds.append("  \"description\": \"").append(part2).append("\",\n");
-            embeds.append("  \"color\": 3447003,\n");
-            embeds.append("  \"fields\": [\n");
-            embeds.append("    {\n");
-            embeds.append("      \"name\": \"🎵 Background Music\",\n");
-            embeds.append("      \"value\": \"").append(musicLink).append("\",\n");
-            embeds.append("      \"inline\": false\n");
-            embeds.append("    }\n");
-            embeds.append("  ],\n");
-            embeds.append("  \"footer\": {\n");
-            embeds.append("    \"text\": \"Daily Book • ").append(formattedDate).append(" • Part 2/2\"\n");
-            embeds.append("  },\n");
-            embeds.append("  \"timestamp\": \"").append(timestamp).append("\"\n");
-            embeds.append("}");
-        }
-
-        return embeds.toString();
-    }
-
-    /**
-     * Escapes special characters for JSON
-     */
-    private String escapeJson(String text) {
-        if (text == null) return "";
-        return text
-            .replace("\\", "\\\\")
-            .replace("\"", "\\\"")
-            .replace("\n", "\\n")
-            .replace("\r", "\\r")
-            .replace("\t", "\\t");
     }
 }
