@@ -24,7 +24,7 @@ public class DiscordService {
     private final String userId;
     private final String authToken;
 
-    private static final int MAX_DESC_LENGTH = 3500; // Leave room for title, fields, footer (6000 total limit)
+    private static final int MAX_DESC_LENGTH = 2800; // Leave room for title, fields, footer (6000 total embed limit)
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     public DiscordService(
@@ -99,8 +99,12 @@ public class DiscordService {
         String date = essay.getGeneratedAt().format(DATE_FMT);
         String timestamp = essay.getGeneratedAt().toString();
 
-        // Split essay into chunks that fit Discord embed description (max 4096)
+        // Split essay into chunks that fit Discord embed total size limit (6000 chars per embed)
         List<String> chunks = splitContent(essayContent, MAX_DESC_LENGTH);
+        System.out.println("Essay " + essayContent.length() + " chars split into " + chunks.size() + " embed(s)");
+        for (int i = 0; i < chunks.size(); i++) {
+            System.out.println("  Chunk " + (i+1) + ": " + chunks.get(i).length() + " chars");
+        }
 
         List<Map<String, Object>> embeds = new ArrayList<>();
 
