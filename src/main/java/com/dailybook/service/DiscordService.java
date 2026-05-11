@@ -14,20 +14,14 @@ public class DiscordService {
     private final String userId;
     private final String authToken;
 
-    @Value("${discord.webhook.url:}")
-    private String discordWebhookUrl;
-
-    @Value("${discord.user.id:}")
-    private String discordUserId;
-
-    @Value("${discord.auth.token:}")
-    private String discordAuthToken;
-
-    public DiscordService() {
+    public DiscordService(
+            @Value("${discord.webhook.url:}") String webhookUrl,
+            @Value("${discord.user.id:}") String userId,
+            @Value("${discord.auth.token:}") String authToken) {
         this.webClient = WebClient.create();
-        this.webhookUrl = discordWebhookUrl;
-        this.userId = discordUserId;
-        this.authToken = discordAuthToken;
+        this.webhookUrl = webhookUrl;
+        this.userId = userId;
+        this.authToken = authToken;
     }
 
     /**
