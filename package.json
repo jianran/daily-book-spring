@@ -6,9 +6,12 @@
     "start": "mvn spring-boot:run",
     "build": "mvn clean package -DskipTests",
     "test": "mvn test",
-    "docker:build": "docker build -t daily-book-spring .",
-    "docker:run": "docker-compose up",
-    "docker:stop": "docker-compose down"
+    "docker:login": "docker login ghcr.io",
+    "docker:pull": "docker pull ghcr.io/fatan/daily-book-spring:latest",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker logs -f daily-book-spring",
+    "docker:restart": "docker compose restart"
   },
   "keywords": [
     "spring-boot",

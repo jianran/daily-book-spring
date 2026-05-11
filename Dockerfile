@@ -12,25 +12,15 @@ COPY src ./src
 RUN mvn clean package -DskipTests -B
 
 # Runtime stage
-FROM eclipse-temurin:17-jre-alpine
+FROM eclipse-temurin:17-jre
 
 WORKDIR /app
-
-# Create non-root user for security
-RUN adduser -D -g '' appuser && chown -R appuser:appuser /app
 
 # Copy JAR from builder
 COPY --from=builder /app/target/*.jar app.jar
 
-# Switch to non-root user
-USER appuser
-
 # Expose port
 EXPOSE 8080
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:8080/api/books/health || exit 1
 
 # Run the application
 ENTRYPOINT ["java", "-jar", "app.jar"]
