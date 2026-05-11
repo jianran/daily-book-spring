@@ -10,12 +10,12 @@ import java.util.Random;
 @Service
 public class BookService {
 
-    private final GoogleBooksService googleBooksService;
+    private final OpenLibraryService openLibraryService;
     private final DeepSeekAiService deepSeekAiService;
     private final Random random = new Random();
 
-    public BookService(GoogleBooksService googleBooksService, DeepSeekAiService deepSeekAiService) {
-        this.googleBooksService = googleBooksService;
+    public BookService(OpenLibraryService openLibraryService, DeepSeekAiService deepSeekAiService) {
+        this.openLibraryService = openLibraryService;
         this.deepSeekAiService = deepSeekAiService;
     }
 
@@ -23,14 +23,14 @@ public class BookService {
      * Fetches top books from multiple categories
      */
     public List<Book> getTopBooks(List<String> categories) {
-        return googleBooksService.fetchTopBooks(categories);
+        return openLibraryService.fetchTopBooks(categories);
     }
 
     /**
      * Gets a random book from the list
      */
     public Book getRandomBook(List<Book> books) {
-        return googleBooksService.getRandomBook(books);
+        return openLibraryService.getRandomBook(books);
     }
 
     /**
@@ -56,6 +56,12 @@ public class BookService {
 
         // Select a random book
         Book selectedBook = getRandomBook(allBooks);
+
+        // Fetch full description from Open Library
+        String description = openLibraryService.fetchDescription(selectedBook.getIndustryIdentifier());
+        if (description != null && !description.isEmpty()) {
+            selectedBook.setDescription(description);
+        }
 
         // Generate essay
         return generateBookEssay(selectedBook);
