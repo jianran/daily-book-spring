@@ -340,12 +340,12 @@ public class DeepSeekAiService {
                 firstDeepLink = deepLink;
             }
 
-            formattedText.append("🎵 ").append(i + 1).append(". ").append(name).append("\n");
+            // Discord markdown link format: [text](url)
+            formattedText.append("🎵 ").append(i + 1).append(". [").append(name)
+                    .append("](").append(url).append(")\n");
             if (allUrls.length() > 0) allUrls.append("\n");
             allUrls.append(url);
         }
-
-        formattedText.append("\nOpen in Apple Music to listen while reading.");
 
         return new Essay.AppleMusicLink(
                 firstUrl != null ? firstUrl : "https://music.apple.com/search?term=classical+reading",
