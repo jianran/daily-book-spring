@@ -69,6 +69,13 @@ public class DiscordService {
         try {
             Map<String, Object> payload = buildPayload(essay);
 
+            // Debug: log payload size
+            try {
+                String json = objectMapper.writeValueAsString(payload);
+                System.out.println("Discord payload: " + json.length() + " bytes");
+                if (json.length() < 2000) System.out.println("Payload: " + json);
+            } catch (Exception ignored) {}
+
             var request = webClient.post()
                     .uri(url)
                     .contentType(MediaType.APPLICATION_JSON)
