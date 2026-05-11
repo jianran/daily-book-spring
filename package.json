@@ -1,0 +1,22 @@
+{
+  "name": "daily-book-spring",
+  "version": "1.0.0",
+  "description": "Daily popular book finder with AI-generated essays",
+  "scripts": {
+    "start": "mvn spring-boot:run",
+    "build": "mvn clean package -DskipTests",
+    "test": "mvn test",
+    "docker:build": "docker build -t daily-book-spring .",
+    "docker:run": "docker-compose up",
+    "docker:stop": "docker-compose down"
+  },
+  "keywords": [
+    "spring-boot",
+    "spring-ai",
+    "deepseek",
+    "google-books-api",
+    "book-essay"
+  ],
+  "author": "",
+  "license": "MIT"
+}
