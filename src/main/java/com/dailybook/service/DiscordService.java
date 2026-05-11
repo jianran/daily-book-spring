@@ -4,6 +4,7 @@ import com.dailybook.model.Essay;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -66,7 +67,7 @@ public class DiscordService {
 
     private void doSend(String url, String authToken, Essay essay) {
         try {
-            String payload = buildPayload(essay);
+            Map<String, Object> payload = buildPayload(essay);
 
             var request = webClient.post()
                     .uri(url)
@@ -82,12 +83,14 @@ public class DiscordService {
                     .block();
 
             System.out.println("Essay sent to Discord successfully");
+        } catch (WebClientResponseException e) {
+            System.err.println("Discord API error " + e.getStatusCode() + ": " + e.getResponseBodyAsString());
         } catch (Exception e) {
             System.err.println("Error sending to Discord: " + e.getMessage());
         }
     }
 
-    private String buildPayload(Essay essay) throws JsonProcessingException {
+    private Map<String, Object> buildPayload(Essay essay) {
         String bookTitle = essay.getSelectedBook().getTitle();
         String author = essay.getSelectedBook().getAuthor();
         String category = essay.getSelectedBook().getCategory();
@@ -127,7 +130,7 @@ public class DiscordService {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("embeds", embeds);
 
-        return objectMapper.writeValueAsString(payload);
+        return payload;
     }
 
     private static Map<String, Object> field(String name, String value, boolean inline) {
