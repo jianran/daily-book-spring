@@ -24,7 +24,7 @@ public class DiscordService {
     private final String userId;
     private final String authToken;
 
-    private static final int MAX_DESC_LENGTH = 4000;
+    private static final int MAX_DESC_LENGTH = 3500; // Leave room for title, fields, footer (6000 total limit)
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     public DiscordService(
