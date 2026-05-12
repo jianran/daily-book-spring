@@ -45,7 +45,7 @@ public class BookService {
      */
     public Essay generateDailyEssay() {
         // Define default categories
-        List<String> categories = List.of("history", "ai", "fiction", "non_fiction");
+        List<String> categories = List.of("bestseller_technology_and_engineering", "bestseller_fiction", "trending_fiction", "trending_non_fiction");
 
         // Fetch top books
         List<Book> allBooks = getTopBooks(categories);

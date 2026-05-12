@@ -103,7 +103,12 @@ public class BookController {
                 "bestseller_technology_and_engineering",
                 "bestseller_fiction",
                 "bestseller_history",
-                "bestseller_advice_how_to_and_miscellaneous"
+                "bestseller_advice_how_to_and_miscellaneous",
+                "bestseller_business",
+                "bestseller_science",
+                "bestseller_poetry",
+                "trending_fiction",
+                "trending_non_fiction"
         );
         return ResponseEntity.ok(categories);
     }
