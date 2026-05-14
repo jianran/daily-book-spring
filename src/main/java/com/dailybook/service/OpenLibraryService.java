@@ -133,7 +133,8 @@ public class OpenLibraryService {
     public String fetchDescription(String isbn) {
         if (isbn == null || isbn.isEmpty()) return "No description available.";
         try {
-            String url = "https://www.googleapis.com/books/v1/volumes?q=isbn:" + isbn + "&maxResults=1";
+            String url = "https://www.googleapis.com/books/v1/volumes?q=isbn:" + isbn + "&maxResults=1"
+                    + (apiKey != null && !apiKey.isEmpty() ? "&key=" + apiKey : "");
             String response = restTemplate.getForObject(url, String.class);
             JsonNode root = objectMapper.readTree(response);
             JsonNode items = root.get("items");
